@@ -7,6 +7,12 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
+import warnings
+
+# Suppress warnings for cleaner output
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', category=UserWarning)
+np.seterr(divide='ignore', invalid='ignore')
 
 # Page configuration
 st.set_page_config(
@@ -123,6 +129,42 @@ with st.sidebar.expander("📖 Como usar este dashboard"):
 # Page content based on selection
 if page == "🏠 Visão Geral":
     st.markdown('<h2 class="section-header">📊 Visão Geral dos Dados</h2>', unsafe_allow_html=True)
+    
+    # Documentação do Dashboard
+    st.markdown("### 📖 Sobre este Dashboard")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        **🎯 Objetivo do Dashboard**
+        
+        Este dashboard foi desenvolvido para explorar visualmente fatores de risco associados ao câncer de pulmão, facilitando a descoberta de padrões, tendências e relações entre diferentes variáveis que podem influenciar o desenvolvimento da doença.
+        
+        **📊 Dataset:** 3.000 pacientes com 24 variáveis incluindo dados demográficos, histórico de tabagismo, fatores ambientais e médicos.
+        """)
+    
+    with col2:
+        st.markdown("""
+        **🧭 Como Navegar**
+        
+        - **Menu Lateral:** Use o seletor de páginas para navegar entre as diferentes seções de análise
+        - **6 Páginas Temáticas:** Cada página foca em um aspecto específico dos dados
+        - **Filtros Globais:** Aplicam-se a todas as páginas automaticamente
+        - **Interatividade:** Clique, arraste e use widgets para explorar os dados
+        """)
+    
+    with col3:
+        st.markdown("""
+        **🔧 Como os Filtros Funcionam**
+        
+        - **Atualizações Automáticas:** Todos os gráficos são atualizados em tempo real
+        - **Combinação de Filtros:** Use múltiplos filtros simultaneamente para análises específicas
+        - **Indicador de Dados:** Veja quantos registros estão sendo analisados após a filtragem
+        - **Reset:** Ajuste os filtros a qualquer momento para explorar diferentes cenários
+        """)
+    
+    st.markdown("---")
     
     # Key metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -268,14 +310,56 @@ elif page == "🚬 Análise de Tabagismo":
     # Secondhand smoke analysis
     st.subheader("💨 Exposição ao Fumo Passivo")
     
-    fig_secondhand = px.sunburst(
-        filtered_df,
-        path=['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage'],
-        title="Exposição ao Fumo Passivo vs Câncer",
-        color_discrete_sequence=['#A8E6CF', '#FFD93D', '#FF6B6B', '#6C5CE7']
-    )
-    fig_secondhand.update_layout(height=500)
-    st.plotly_chart(fig_secondhand, use_container_width=True)
+    # Prepare data for sunburst chart
+    try:
+        # Create a clean dataframe for sunburst
+        sunburst_data = filtered_df[['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage']].dropna()
+        
+        # Group and count for better hierarchy
+        sunburst_counts = sunburst_data.groupby(['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage']).size().reset_index(name='Count')
+        
+        if len(sunburst_counts) > 0:
+            fig_secondhand = px.sunburst(
+                sunburst_counts,
+                path=['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage'],
+                values='Count',
+                title="Exposição ao Fumo Passivo vs Câncer",
+                color='Count',
+                color_continuous_scale='Blues'
+            )
+            fig_secondhand.update_layout(height=500)
+            st.plotly_chart(fig_secondhand, use_container_width=True)
+        else:
+            # Fallback: use bar chart if sunburst fails
+            fallback_data = filtered_df.groupby(['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage']).size().reset_index(name='Count')
+            fig_fallback = px.bar(
+                fallback_data,
+                x='Secondhand_Smoke_Exposure',
+                y='Count',
+                color='Lung_Cancer_Stage',
+                title="Exposição ao Fumo Passivo vs Câncer",
+                barmode='stack'
+            )
+            fig_fallback.update_layout(height=500)
+            st.plotly_chart(fig_fallback, use_container_width=True)
+    
+    except Exception as e:
+        # Ultimate fallback: simple bar chart
+        try:
+            simple_data = filtered_df['Secondhand_Smoke_Exposure'].value_counts().reset_index()
+            simple_data.columns = ['Exposição', 'Contagem']
+            fig_simple = px.bar(
+                simple_data,
+                x='Exposição',
+                y='Contagem',
+                title="Distribuição de Exposição ao Fumo Passivo",
+                color='Contagem',
+                color_continuous_scale='Blues'
+            )
+            fig_simple.update_layout(height=500)
+            st.plotly_chart(fig_simple, use_container_width=True)
+        except:
+            st.warning("Não foi possível gerar o gráfico de exposição ao fumo passivo.")
 
 elif page == "👥 Demografia":
     st.markdown('<h2 class="section-header">👥 Análise Demográfica</h2>', unsafe_allow_html=True)
@@ -356,16 +440,53 @@ elif page == "👥 Demografia":
         st.plotly_chart(fig_region, use_container_width=True)
     
     with col2:
-        # Income vs Education
-        fig_income_edu = px.box(
-            filtered_df,
-            x='Education_Level',
-            y='Income_Level',
-            title="Distribuição de Renda por Nível Educacional",
-            color='Education_Level'
-        )
-        fig_income_edu.update_layout(height=400, xaxis_tickangle=45)
-        st.plotly_chart(fig_income_edu, use_container_width=True)
+        # Income vs Education - Tratamento para dados categóricos
+        try:
+            # Converter Income_Level para numérico se possível
+            income_mapping = {
+                'Low': 1, 'Middle': 2, 'High': 3,
+                'Baixa': 1, 'Média': 2, 'Alta': 3
+            }
+            
+            # Verificar se os dados são categóricos e mapear para numéricos
+            if filtered_df['Income_Level'].dtype == 'object':
+                # Tentar usar mapeamento, se não funcionar, usar códigos categóricos
+                try:
+                    income_numeric = filtered_df['Income_Level'].map(income_mapping)
+                    if income_numeric.isna().all():
+                        income_numeric = pd.Categorical(filtered_df['Income_Level']).codes
+                except:
+                    income_numeric = pd.Categorical(filtered_df['Income_Level']).codes
+            else:
+                income_numeric = filtered_df['Income_Level']
+            
+            # Criar DataFrame temporário para o gráfico
+            temp_df = filtered_df.copy()
+            temp_df['Income_Level_Numeric'] = income_numeric
+            
+            fig_income_edu = px.box(
+                temp_df,
+                x='Education_Level',
+                y='Income_Level_Numeric',
+                title="Distribuição de Renda por Nível Educacional",
+                color='Education_Level'
+            )
+            fig_income_edu.update_layout(height=400, xaxis_tickangle=45)
+            st.plotly_chart(fig_income_edu, use_container_width=True)
+            
+        except Exception as e:
+            # Fallback: usar gráfico de barras se box plot falhar
+            income_edu_count = filtered_df.groupby(['Education_Level', 'Income_Level']).size().reset_index(name='Count')
+            fig_income_edu_fallback = px.bar(
+                income_edu_count,
+                x='Education_Level',
+                y='Count',
+                color='Income_Level',
+                title="Distribuição de Renda por Nível Educacional",
+                barmode='group'
+            )
+            fig_income_edu_fallback.update_layout(height=400, xaxis_tickangle=45)
+            st.plotly_chart(fig_income_edu_fallback, use_container_width=True)
     
     # BMI analysis
     st.subheader("⚖️ Análise do IMC")
@@ -448,19 +569,46 @@ elif page == "🏥 Análise Médica":
     )
     
     if len(risk_factors) > 1:
-        # Create correlation matrix
-        corr_data = filtered_df[risk_factors].corr()
-        
-        # Create heatmap
-        fig_corr = px.imshow(
-            corr_data,
-            text_auto=True,
-            aspect="auto",
-            title="Matriz de Correlação entre Fatores de Risco",
-            color_continuous_scale='RdBu'
-        )
-        fig_corr.update_layout(height=500)
-        st.plotly_chart(fig_corr, use_container_width=True)
+        try:
+            # Filter only numeric columns and handle missing values
+            numeric_risk_factors = []
+            for factor in risk_factors:
+                if factor in filtered_df.columns:
+                    if pd.api.types.is_numeric_dtype(filtered_df[factor]):
+                        numeric_risk_factors.append(factor)
+                    else:
+                        # Try to convert categorical to numeric
+                        if factor == 'Air_Pollution_Level':
+                            temp_col = filtered_df[factor].map({'Low': 1, 'Moderate': 2, 'Medium': 2, 'High': 3})
+                            if not temp_col.isna().all():
+                                filtered_df_temp = filtered_df.copy()
+                                filtered_df_temp[factor] = temp_col
+                                numeric_risk_factors.append(factor)
+            
+            if len(numeric_risk_factors) > 1:
+                # Create correlation matrix with error handling
+                corr_data_clean = filtered_df[numeric_risk_factors].dropna()
+                if len(corr_data_clean) > 1:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        corr_data = corr_data_clean.corr()
+                    
+                    # Create heatmap
+                    fig_corr = px.imshow(
+                        corr_data,
+                        text_auto=True,
+                        aspect="auto",
+                        title="Matriz de Correlação entre Fatores de Risco",
+                        color_continuous_scale='RdBu'
+                    )
+                    fig_corr.update_layout(height=500)
+                    st.plotly_chart(fig_corr, use_container_width=True)
+                else:
+                    st.warning("Dados insuficientes para calcular correlações após remoção de valores ausentes.")
+            else:
+                st.warning("Selecione pelo menos 2 fatores numéricos para análise de correlação.")
+        except Exception as e:
+            st.warning("Não foi possível calcular a matriz de correlação com os fatores selecionados.")
     
     # Genetic markers analysis
     st.subheader("🧬 Análise de Marcadores Genéticos")
@@ -718,20 +866,79 @@ elif page == "🔍 Análise Detalhada":
     # Calculate correlation with cancer occurrence
     cancer_binary = (advanced_df['Lung_Cancer_Stage'] != 'No Cancer').astype(int)
     
-    # Numerical columns for correlation
-    numerical_cols = ['Age', 'Years_Smoking', 'Cigarettes_Per_Day', 'BMI', 'Air_Pollution_Level']
+    # Start with basic numerical columns
+    basic_numerical_cols = []
+    for col in ['Age', 'Years_Smoking', 'Cigarettes_Per_Day', 'BMI']:
+        if col in advanced_df.columns and pd.api.types.is_numeric_dtype(advanced_df[col]):
+            basic_numerical_cols.append(col)
     
-    correlations = []
-    for col in numerical_cols:
+    # Handle categorical columns that should be numeric
+    categorical_mappings = {
+        'Air_Pollution_Level': {'Low': 1, 'Moderate': 2, 'Medium': 2, 'High': 3},
+        'Physical_Activity_Level': {'Low': 1, 'Moderate': 2, 'Medium': 2, 'High': 3},
+        'Diet_Quality': {'Poor': 1, 'Average': 2, 'Good': 3}
+    }
+    
+    # Create a working DataFrame for correlations
+    corr_df_working = advanced_df[basic_numerical_cols].copy()
+    
+    # Add converted categorical columns
+    for col, mapping in categorical_mappings.items():
         if col in advanced_df.columns:
-            corr = advanced_df[col].corr(cancer_binary)
-            correlations.append({'Factor': col.replace('_', ' '), 'Correlation': abs(corr)})
+            try:
+                converted_col = advanced_df[col].map(mapping)
+                if not converted_col.isna().all():
+                    corr_df_working[col] = converted_col
+            except Exception:
+                continue
+    
+    # Calculate correlations with robust error handling
+    correlations = []
+    for col in corr_df_working.columns:
+        try:
+            # Check if column has enough valid data
+            valid_col_data = corr_df_working[col].dropna()
+            if len(valid_col_data) < 2:
+                continue
+                
+            # Check if column has variance (not all same values)
+            if valid_col_data.nunique() < 2:
+                continue
+                
+            # Create valid dataset for correlation
+            col_data = corr_df_working[col].reset_index(drop=True)
+            cancer_data = pd.Series(cancer_binary).reset_index(drop=True)
+            
+            # Ensure same length
+            min_len = min(len(col_data), len(cancer_data))
+            col_data = col_data[:min_len]
+            cancer_data = cancer_data[:min_len]
+            
+            # Remove NaN values
+            valid_indices = pd.notna(col_data) & pd.notna(cancer_data)
+            col_clean = col_data[valid_indices]
+            cancer_clean = cancer_data[valid_indices]
+            
+            # Final checks before correlation
+            if len(col_clean) > 1 and col_clean.nunique() > 1 and cancer_clean.nunique() > 1:
+                # Suppress warnings for this specific calculation
+                with pd.option_context('mode.use_inf_as_na', True):
+                    corr = col_clean.corr(cancer_clean)
+                    
+                if pd.notna(corr) and abs(corr) > 1e-10:  # Avoid very small correlations
+                    factor_name = col.replace('_', ' ')
+                    correlations.append({'Factor': factor_name, 'Correlation': abs(corr)})
+                    
+        except (ValueError, ZeroDivisionError, RuntimeWarning):
+            continue
+        except Exception:
+            continue
     
     if correlations:
-        corr_df = pd.DataFrame(correlations).sort_values('Correlation', ascending=True)
+        corr_result_df = pd.DataFrame(correlations).sort_values('Correlation', ascending=True)
         
         fig_ranking = px.bar(
-            corr_df,
+            corr_result_df,
             x='Correlation',
             y='Factor',
             orientation='h',
@@ -741,23 +948,37 @@ elif page == "🔍 Análise Detalhada":
         )
         fig_ranking.update_layout(height=400)
         st.plotly_chart(fig_ranking, use_container_width=True)
+    else:
+        st.warning("Não foi possível calcular correlações com os dados filtrados atuais.")
     
     # Summary statistics
     st.subheader("📋 Estatísticas Resumo")
     
     if len(advanced_df) > 0:
-        summary_stats = advanced_df[numerical_cols].describe()
-        st.dataframe(summary_stats.round(2))
+        # Use only basic numerical columns that exist in original DataFrame
+        basic_numerical_cols = []
+        for col in ['Age', 'Years_Smoking', 'Cigarettes_Per_Day', 'BMI']:
+            if col in advanced_df.columns and pd.api.types.is_numeric_dtype(advanced_df[col]):
+                basic_numerical_cols.append(col)
+        
+        if basic_numerical_cols:
+            summary_stats = advanced_df[basic_numerical_cols].describe()
+            st.dataframe(summary_stats.round(2))
+        else:
+            st.warning("Nenhuma coluna numérica disponível para estatísticas resumo.")
         
         # Cancer statistics by group
         if compare_by in advanced_df.columns:
-            cancer_by_group = advanced_df.groupby(compare_by).agg({
-                'Lung_Cancer_Stage': lambda x: (x != 'No Cancer').mean() * 100,
-                'Age': 'mean',
-                'BMI': 'mean'
-            }).round(2)
-            cancer_by_group.columns = ['Taxa de Câncer (%)', 'Idade Média', 'IMC Médio']
-            st.dataframe(cancer_by_group)
+            try:
+                cancer_by_group = advanced_df.groupby(compare_by).agg({
+                    'Lung_Cancer_Stage': lambda x: (x != 'No Cancer').mean() * 100,
+                    'Age': 'mean',
+                    'BMI': 'mean'
+                }).round(2)
+                cancer_by_group.columns = ['Taxa de Câncer (%)', 'Idade Média', 'IMC Médio']
+                st.dataframe(cancer_by_group)
+            except Exception as e:
+                st.warning(f"Não foi possível calcular estatísticas por grupo: {str(e)}")
 
 # Footer
 st.markdown("---")

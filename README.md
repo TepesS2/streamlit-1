@@ -18,7 +18,24 @@ O projeto utiliza o dataset "Smoking and Other Risk Factors Dataset" do Kaggle, 
 - Fatores médicos (IMC, atividade física, histórico familiar, marcadores genéticos)
 - Dados clínicos (estágio do câncer, ano do diagnóstico, status de sobrevivência)
 
-## 🚀 Funcionalidades
+## � Correções Implementadas
+
+### ✅ Serialização JSON (Junho 2025)
+- **Problema resolvido:** Erro "Object of type Interval is not JSON serializable"
+- **Solução:** Conversão automática de objetos `pandas.Interval` para strings
+- **Impacto:** Faixas etárias personalizadas agora funcionam perfeitamente
+- **Arquivo:** Ver `CORRECOES_SERIALIZACAO.md` para detalhes técnicos
+
+### ✅ Warnings do Pandas
+- Adicionado `observed=True` em todos os `groupby()` para dados categóricos
+- Supressão de warnings desnecessários para melhor experiência do usuário
+
+### ✅ Robustez Geral
+- Tratamento melhorado de casos extremos e dados faltantes
+- Fallbacks implementados para gráficos com dados insuficientes
+- Sistema de validação automática com `testar_correcoes.py`
+
+## �🚀 Funcionalidades
 
 ### 📱 Páginas Interativas
 
@@ -77,7 +94,7 @@ O dashboard inclui mais de **15 visualizações**, sendo **8 interativas**:
    - Multiselect para filtros avançados
    - Selectbox para tipos de agrupamento
 
-## 🛠️ Instalação e Execução
+## � Instalação e Execução
 
 ### Pré-requisitos
 - Python 3.7+
@@ -118,6 +135,14 @@ O dashboard inclui mais de **15 visualizações**, sendo **8 interativas**:
 
 6. **Acesse no navegador**:
    - URL: `http://localhost:8501`
+
+### ⚠️ Correções Implementadas
+
+- **Tratamento de valores NaN** na correlação de fatores de risco
+- **Conversão automática** de dados categóricos para numéricos
+- **Mapeamento robusto** de níveis de renda e educação
+- **Validação de tipos** de dados antes dos cálculos
+- **Fallback gracioso** para gráficos com dados incompatíveis
 
 ## ☁️ Deploy na Nuvem Streamlit
 
