@@ -14,6 +14,14 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 np.seterr(divide='ignore', invalid='ignore')
 
+def converter_intervalos_para_string(series):
+    """Converte objetos Interval para strings legíveis para uso em gráficos"""
+    if hasattr(series, 'dtype') and series.dtype.name == 'category':
+        # Verificar se são intervalos
+        if len(series) > 0 and hasattr(series.iloc[0], 'left'):
+            return series.apply(lambda x: f"{x.left:.0f}-{x.right:.0f}")
+    return series
+
 # Page configuration
 st.set_page_config(
     page_title="Dashboard de Análise de Fatores de Risco do Câncer de Pulmão",
@@ -316,7 +324,7 @@ elif page == "🚬 Análise de Tabagismo":
         sunburst_data = filtered_df[['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage']].dropna()
         
         # Group and count for better hierarchy
-        sunburst_counts = sunburst_data.groupby(['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage']).size().reset_index(name='Count')
+        sunburst_counts = sunburst_data.groupby(['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage'], observed=True).size().reset_index(name='Count')
         
         if len(sunburst_counts) > 0:
             fig_secondhand = px.sunburst(
@@ -331,7 +339,7 @@ elif page == "🚬 Análise de Tabagismo":
             st.plotly_chart(fig_secondhand, use_container_width=True)
         else:
             # Fallback: use bar chart if sunburst fails
-            fallback_data = filtered_df.groupby(['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage']).size().reset_index(name='Count')
+            fallback_data = filtered_df.groupby(['Secondhand_Smoke_Exposure', 'Lung_Cancer_Stage'], observed=True).size().reset_index(name='Count')
             fig_fallback = px.bar(
                 fallback_data,
                 x='Secondhand_Smoke_Exposure',
@@ -376,19 +384,25 @@ elif page == "👥 Demografia":
     if age_group_type == "Décadas":
         filtered_df['Age_Group'] = (filtered_df['Age'] // 10) * 10
         filtered_df['Age_Group'] = filtered_df['Age_Group'].astype(str) + 's'
+        group_col = 'Age_Group'
     elif age_group_type == "Quartis":
         filtered_df['Age_Group'] = pd.qcut(filtered_df['Age'], 4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
+        group_col = 'Age_Group'
     else:
         bins = st.slider("Número de faixas etárias:", 3, 10, 5)
         filtered_df['Age_Group'] = pd.cut(filtered_df['Age'], bins=bins)
+        # Converter intervalos para strings para evitar erro de serialização JSON
+        filtered_df['Age_Group_Str'] = converter_intervalos_para_string(filtered_df['Age_Group'])
+        group_col = 'Age_Group_Str'
     
     col1, col2 = st.columns(2)
     
     with col1:
         # Age group distribution
+        age_dist_data = filtered_df.groupby([group_col, 'Gender'], observed=True).size().reset_index(name='Count')
         fig_age_dist = px.bar(
-            filtered_df.groupby(['Age_Group', 'Gender']).size().reset_index(name='Count'),
-            x='Age_Group',
+            age_dist_data,
+            x=group_col,
             y='Count',
             color='Gender',
             title=f"Distribuição por {age_group_type}",
@@ -399,14 +413,14 @@ elif page == "👥 Demografia":
     
     with col2:
         # Cancer rate by age group
-        age_cancer = filtered_df.groupby('Age_Group').agg({
+        age_cancer = filtered_df.groupby(group_col, observed=True).agg({
             'Lung_Cancer_Stage': lambda x: (x != 'No Cancer').mean() * 100
         }).reset_index()
-        age_cancer.columns = ['Age_Group', 'Cancer_Rate']
+        age_cancer.columns = [group_col, 'Cancer_Rate']
         
         fig_age_cancer = px.bar(
             age_cancer,
-            x='Age_Group',
+            x=group_col,
             y='Cancer_Rate',
             title="Taxa de Câncer por Faixa Etária (%)",
             color='Cancer_Rate',
@@ -476,7 +490,7 @@ elif page == "👥 Demografia":
             
         except Exception as e:
             # Fallback: usar gráfico de barras se box plot falhar
-            income_edu_count = filtered_df.groupby(['Education_Level', 'Income_Level']).size().reset_index(name='Count')
+            income_edu_count = filtered_df.groupby(['Education_Level', 'Income_Level'], observed=True).size().reset_index(name='Count')
             fig_income_edu_fallback = px.bar(
                 income_edu_count,
                 x='Education_Level',
@@ -618,7 +632,7 @@ elif page == "🏥 Análise Médica":
     with col1:
         # Genetic markers vs Family history
         fig_genetic = px.bar(
-            filtered_df.groupby(['Genetic_Markers_Positive', 'Family_History']).size().reset_index(name='Count'),
+            filtered_df.groupby(['Genetic_Markers_Positive', 'Family_History'], observed=True).size().reset_index(name='Count'),
             x='Genetic_Markers_Positive',
             y='Count',
             color='Family_History',
@@ -631,7 +645,7 @@ elif page == "🏥 Análise Médica":
     with col2:
         # Survival status analysis
         fig_survival = px.bar(
-            filtered_df.groupby(['Survival_Status', 'Genetic_Markers_Positive']).size().reset_index(name='Count'),
+            filtered_df.groupby(['Survival_Status', 'Genetic_Markers_Positive'], observed=True).size().reset_index(name='Count'),
             x='Survival_Status',
             y='Count',
             color='Genetic_Markers_Positive',
@@ -644,7 +658,7 @@ elif page == "🏥 Análise Médica":
     # Lifestyle factors
     st.subheader("🏃‍♂️ Fatores de Estilo de Vida")
     
-    lifestyle_data = filtered_df.groupby(['Physical_Activity_Level', 'Diet_Quality']).agg({
+    lifestyle_data = filtered_df.groupby(['Physical_Activity_Level', 'Diet_Quality'], observed=True).agg({
         'Lung_Cancer_Stage': lambda x: (x != 'No Cancer').mean() * 100
     }).reset_index()
     lifestyle_data.columns = ['Physical_Activity_Level', 'Diet_Quality', 'Cancer_Rate']
